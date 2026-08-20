@@ -50,7 +50,7 @@ class Helper(object):
 **❖ sᴇɴᴅ ᴡʜɪsᴘᴇʀ ᴍᴇssᴀɢᴇ ❖**
 
 ```
- єxᴧϻᴘʟє : @LustifyMusicBot @SheOwnsMaixm I love You 😘
+ єxᴧϻᴘʟє : @LustifyMusicBot @Swaggy_Rajput I love You 😘
 ```
 
 <u>**❖ ᴛєxᴛ ᴛσ ᴠσɪᴄє**</u>
@@ -439,8 +439,8 @@ class Helper(object):
 ─────────────────────────
 ❖ υᴘᴅᴧᴛєs ᴄʜᴧηηєʟ ➥ [˹ sᴘɪᴄʏ ꭙ ɴᴇᴛᴡᴏʀᴋ ˼](https://t.me/SpicyxNetwork)
 ❖ sυᴘᴘσʀᴛ ᴄʜᴧᴛ ➥ [𝑪𝒉𝒂𝒕𝒓𝒐𝒑𝒐𝒍𝒊𝒔 !! 🎀💗](https://t.me/+t25uIUjGL30wMmU9)
-❖ ʙᴏᴛ σᴡηєʀ ➥ [ㅤ- 𝚳 ⋏ 𐩃 ι ϻ 💸](https://t.me/SheOwnsMaxim)
-❖ ʀєᴘσ ʟɪηᴋ ➥ [ᴄʟɪᴄᴋ-ʜєʀє](https://t.me/SheOwnsMaxim)
+❖ ʙᴏᴛ σᴡηєʀ ➥ [ㅤꜱᴡΛɢɢʏ™](https://t.me/Swaggy_Rajput)
+❖ ʀєᴘσ ʟɪηᴋ ➥ [ᴄʟɪᴄᴋ-ʜєʀє](https://t.me/Swaggy_Rajput)
 ─────────────────────────
 ❖ ᴄʟɪᴄᴋ ση ᴛʜє ʜєʟᴩ ʙυᴛᴛση ᴛσ ɢєᴛ ɪηғσ
    ᴧʙσυᴛ ϻʏ ϻσᴅυʟєs ᴧηᴅ ᴄσϻϻᴧηᴅs...!!
