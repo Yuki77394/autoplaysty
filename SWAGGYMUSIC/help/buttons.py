@@ -101,7 +101,7 @@ class BUTTONS(object):
         ]
     PBUTTON = [
         [
-            InlineKeyboardButton("ㅤ- 𝚳 ⋏ 𐩃 ι ϻ 💸 ", url="https://t.me/SheOwnsMaxim")
+            InlineKeyboardButton(" ㅤꜱᴡΛɢɢʏ™ ", url="https://t.me/Swaggy_Rajput")
         ],
         [
             InlineKeyboardButton("⌯ ʙᴧᴄᴋ ⌯", callback_data="MAIN_CP"),
