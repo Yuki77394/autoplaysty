@@ -62,7 +62,7 @@ API_URL = os.environ.get(
     "API_URL", "http://yt.riteshyt.in"
 ).rstrip("/")
 API_KEY = os.environ.get(
-    "API_KEY", "riteshfree576fd88ed84a3f46c84fd556"
+    "API_KEY", "riteshfree3600dc25d88035a442648f4f"
 )
 
 DOWNLOAD_DIR = "downloads"
