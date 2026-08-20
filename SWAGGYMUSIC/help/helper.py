@@ -438,7 +438,7 @@ class Helper(object):
 ● ᴧᴅᴅ ϻє ηᴏᴡ ʙᴧʙʏ ɪɴ ʏᴏᴜʀ ɢʀσᴜᴘs.
 ─────────────────────────
 ❖ υᴘᴅᴧᴛєs ᴄʜᴧηηєʟ ➥ [˹ sᴘɪᴄʏ ꭙ ɴᴇᴛᴡᴏʀᴋ ˼](https://t.me/SpicyxNetwork)
-❖ sυᴘᴘσʀᴛ ᴄʜᴧᴛ ➥ [𝑪𝒉𝒂𝒕𝒓𝒐𝒑𝒐𝒍𝒊𝒔 !! 🎀💗](https://t.me/+t25uIUjGL30wMmU9)
+❖ sυᴘᴘσʀᴛ ᴄʜᴧᴛ ➥ [𝑪𝒉𝒂𝒕𝒓𝒐𝒑𝒐𝒍𝒊𝒔 !! 🎀💗](https://t.me/ChatropolisGc)
 ❖ ʙᴏᴛ σᴡηєʀ ➥ [ㅤꜱᴡΛɢɢʏ™](https://t.me/Swaggy_Rajput)
 ❖ ʀєᴘσ ʟɪηᴋ ➥ [ᴄʟɪᴄᴋ-ʜєʀє](https://t.me/Swaggy_Rajput)
 ─────────────────────────
