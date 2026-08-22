@@ -48,16 +48,20 @@ channel = ["channel"]
 
 # ========================================= #
 # SHUBHU RANDOM REPLY
-# Works for normal members + admins
+# ALL USERS CAN USE THIS
 # ========================================= #
 
-@app.on_message(filters.command(["hubhu"], prefixes=["S"]))
+@app.on_message(
+    filters.command(["hubhu"], prefixes=["S"]),
+    group=0
+)
 async def shubhu_random_reply(_, message):
-    # Only respond when the command is exactly:
+    # Only respond to plain:
     # Shubhu
     #
-    # If arguments are present, leave them for the
-    # admin-only moderation handler below.
+    # If arguments are present, allow the
+    # admin-only moderation handler below
+    # to process the command.
 
     if len(message.text.split()) < 2:
         return await message.reply(random.choice(Yumikoo_text))
@@ -67,7 +71,10 @@ async def shubhu_random_reply(_, message):
 # ADMIN-ONLY MODERATION HANDLER
 # ========================================= #
 
-@app.on_message(filters.command(["hubhu"], prefixes=["S"]) & admin_filter)
+@app.on_message(
+    filters.command(["hubhu"], prefixes=["S"]) & admin_filter,
+    group=1
+)
 async def restriction_app(_, message):
     reply = message.reply_to_message
     chat_id = message.chat.id
