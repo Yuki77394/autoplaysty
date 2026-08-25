@@ -2,6 +2,7 @@ from pyrogram import Client, errors
 from pyrogram.enums import ChatMemberStatus, ParseMode
 
 import config
+import traceback
 
 from ..logging import LOGGER
 
@@ -37,7 +38,8 @@ class Swaggy(Client):
             exit()
         except Exception as ex:
             LOGGER(__name__).error(
-                f"Bot has failed to access the log group/channel.\n  Reason : {type(ex).__name__}."
+                f"Bot has failed to access the log group/channel.\n  Reason : {type(ex).__name__}: {ex}\n"
+                f"  Traceback:\n{traceback.format_exc()}"
             )
             exit()
 
