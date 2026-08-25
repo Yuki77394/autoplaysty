@@ -8,10 +8,11 @@ import traceback
 from ..logging import LOGGER
 
 
-# Pyrogram 2.0.106 has a narrower channel ID range than Telegram currently
-# assigns (MIN_CHANNEL_ID = -1002147483647). Newer supergroups/channels
-# get IDs more negative than this. Patch get_peer_type so these IDs are
-# correctly recognised as channels instead of raising ValueError.
+# Pyrogram 2.0.106's get_peer_type rejects IDs that fall outside its
+# expected ranges. Telegram now assigns supergroup/channel IDs that are
+# more negative than Pyrogram's MIN_CHANNEL_ID, and many bots store the
+# bare channel ID (e.g. 1004392540680) without the leading "-100".
+# Patch get_peer_type so both forms are correctly recognised as channels.
 _original_get_peer_type = _pyro_utils.get_peer_type
 
 
@@ -19,8 +20,11 @@ def _patched_get_peer_type(peer_id: int) -> str:
     try:
         return _original_get_peer_type(peer_id)
     except ValueError:
-        # Telegram channel/supergroup IDs always start with -100
-        if peer_id < 0 and str(peer_id).startswith("-100"):
+        abs_id = abs(peer_id)
+        # Positive IDs starting with 100 (e.g. 1004392540680) or
+        # negative IDs starting with -100 (e.g. -1004392540680)
+        # are both valid channel/supergroup identifiers.
+        if abs_id > 1000000000000 and str(abs_id).startswith("100"):
             return "channel"
         raise
 
