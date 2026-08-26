@@ -15,7 +15,6 @@ import asyncio
 import os
 
 _log = LOGGER(__name__)
-_log.info("WELCOME_DEBUG: welcome.py module loaded successfully")
 
 # ─── MongoDB: reuse existing connection, dedicated collection ───────────────
 welcomedb = mongodb.welcome_toggle
@@ -121,11 +120,8 @@ def _generate_welcome_image(pic_path, user_id, username):
 async def welcome_cmd(client, message: Message):
     chat = message.chat
     chat_id = chat.id
-    _log.info(f"WELCOME_DEBUG: /welcome command received in chat {chat_id}")
-
     try:
         user = await client.get_chat_member(chat_id, message.from_user.id)
-        _log.info(f"WELCOME_DEBUG: user {message.from_user.id} status = {user.status}")
         if user.status not in (
             enums.ChatMemberStatus.ADMINISTRATOR,
             enums.ChatMemberStatus.OWNER,
@@ -134,17 +130,16 @@ async def welcome_cmd(client, message: Message):
                 "**» ᴏɴʟʏ ᴀᴅᴍɪɴꜱ ᴄᴀɴ ʜᴀɴᴅʟᴇ ᴡᴇʟᴄᴏᴍᴇ ꜱʏꜱᴛᴇᴍ**"
             )
     except Exception as e:
-        _log.error(f"WELCOME_DEBUG: welcome_cmd perm check error: {e}")
+        _log.error(f"welcome cmd perm check error: {e}")
         return
 
     try:
         state = await get_welcome(chat_id)
     except Exception as e:
-        _log.error(f"WELCOME_DEBUG: get_welcome error: {e}")
+        _log.error(f"welcome get_welcome error: {e}")
         state = True
 
     status = "ᴇɴᴀʙʟᴇᴅ" if state else "ᴅɪꜱᴀʙʟᴇᴅ"
-    _log.info(f"WELCOME_DEBUG: welcome status = {state}, sending panel")
 
     btn = InlineKeyboardMarkup(
         [
@@ -164,9 +159,8 @@ async def welcome_cmd(client, message: Message):
             f"» ᴄᴜʀʀᴇɴᴛʟʏ ᴡᴇʟᴄᴏᴍᴇ ꜱᴛᴀᴛᴜꜱ **{status}** ɪɴ **{chat.title}**",
             reply_markup=btn,
         )
-        _log.info("WELCOME_DEBUG: /welcome panel sent successfully")
     except Exception as e:
-        _log.error(f"WELCOME_DEBUG: failed to send /welcome reply: {e}")
+        _log.error(f"welcome failed to send reply: {e}")
 
 
 # ─── Callback handler for enable/disable buttons ──────────────────────────
@@ -190,7 +184,7 @@ async def welcome_toggle(client, query):
                 "ʏᴏᴜ ᴀʀᴇ ɴᴏᴛ ᴀᴅᴍɪɴ ʙᴀʙʏ 🥺", show_alert=True
             )
     except Exception as e:
-        _log.error(f"WELCOME_DEBUG: toggle perm check error: {e}")
+        _log.error(f"welcome toggle perm check error: {e}")
         await query.answer("Permission check failed", show_alert=True)
         return
 
@@ -213,7 +207,7 @@ async def welcome_toggle(client, query):
             f"ʙʏ :- **{query.from_user.mention}**"
         )
     except Exception as e:
-        _log.error(f"WELCOME_DEBUG: toggle edit error: {e}")
+        _log.error(f"welcome toggle edit error: {e}")
 
     await query.answer()
 
@@ -226,11 +220,6 @@ async def welcome_toggle(client, query):
 async def greet_new_member(client, member: ChatMemberUpdated):
     chat_id = member.chat.id
     user_id = member.new_chat_member.user.id if member.new_chat_member and member.new_chat_member.user else None
-    _log.info(
-        f"WELCOME_DEBUG: on_chat_member_updated fired — chat={chat_id} "
-        f"user={user_id}"
-    )
-
     # Only process supergroups and basic groups
     if member.chat.type not in (enums.ChatType.SUPERGROUP, enums.ChatType.GROUP):
         return
@@ -239,11 +228,10 @@ async def greet_new_member(client, member: ChatMemberUpdated):
     try:
         is_enabled = await get_welcome(chat_id)
     except Exception as e:
-        _log.error(f"WELCOME_DEBUG: get_welcome error: {e}")
+        _log.error(f"welcome get_welcome error: {e}")
         is_enabled = True
 
     if not is_enabled:
-        _log.info(f"WELCOME_DEBUG: welcome disabled for {chat_id}, skipping")
         return
 
     new_cm = member.new_chat_member
@@ -253,22 +241,10 @@ async def greet_new_member(client, member: ChatMemberUpdated):
         return
 
     # ── Member-join detection ──
-    # Log ALL status transitions for debugging
-    old_status = old_cm.status if old_cm else "None (old_cm is None/missing)"
-    new_status = new_cm.status if new_cm else "None"
-    _log.info(
-        f"WELCOME_DEBUG: status transition: old={old_status} -> new={new_status} "
-        f"for user {new_cm.user.id} in chat {chat_id}"
-    )
-
     # Detect actual joins:
     # - User was LEFT or BANNED, now is MEMBER, ADMINISTRATOR, or RESTRICTED
     try:
         if old_cm is None:
-            _log.warning(
-                f"WELCOME_DEBUG: old_chat_member is None for user {new_cm.user.id}. "
-                f"Cannot determine join — skipping to avoid false triggers."
-            )
             return
 
         old_status_val = old_cm.status
@@ -289,14 +265,10 @@ async def greet_new_member(client, member: ChatMemberUpdated):
         )
 
         if not is_join:
-            _log.info(
-                f"WELCOME_DEBUG: not a join event (old={old_status_val}, new={new_status_val})"
-            )
             return
 
-        _log.info(f"WELCOME_DEBUG: JOIN DETECTED for user {new_cm.user.id} in chat {chat_id}")
     except Exception as e:
-        _log.error(f"WELCOME_DEBUG: status check error: {e}")
+        _log.error(f"welcome status check error: {e}")
         return
 
     user = new_cm.user
@@ -312,9 +284,7 @@ async def greet_new_member(client, member: ChatMemberUpdated):
             )
             pic_path = downloaded_pic
     except Exception as e:
-        _log.warning(
-            f"WELCOME_DEBUG: Failed to download pfp for {user.id}: {e}. Using fallback."
-        )
+        _log.warning(f"welcome pfp download failed for {user.id}: {e}")
 
     # ── Delete previous welcome message for this chat ──
     old_msg = _temp.PREV_MSG.get(f"welcome-{chat_id}")
@@ -328,9 +298,8 @@ async def greet_new_member(client, member: ChatMemberUpdated):
     welcome_img_path = None
     try:
         welcome_img_path = _generate_welcome_image(pic_path, user.id, user.username)
-        _log.info(f"WELCOME_DEBUG: welcome image generated: {welcome_img_path}")
     except Exception as e:
-        _log.error(f"WELCOME_DEBUG: image generation failed for {user.id}: {e}")
+        _log.error(f"welcome image generation failed for {user.id}: {e}")
         if downloaded_pic and os.path.exists(downloaded_pic):
             try:
                 os.remove(downloaded_pic)
@@ -367,8 +336,6 @@ async def greet_new_member(client, member: ChatMemberUpdated):
                 ]
             ),
         )
-        _log.info(f"WELCOME_DEBUG: welcome message sent to {chat_id}")
-
         # ── Schedule auto-delete after 10 seconds ──
         async def _delete_welcome():
             await asyncio.sleep(10)
@@ -384,7 +351,7 @@ async def greet_new_member(client, member: ChatMemberUpdated):
         _temp.PREV_MSG[f"welcome-{chat_id}"] = msg
 
     except Exception as e:
-        _log.error(f"WELCOME_DEBUG: failed to send welcome message: {e}")
+        _log.error(f"welcome failed to send message: {e}")
 
     finally:
         if downloaded_pic and os.path.exists(downloaded_pic):
@@ -401,11 +368,6 @@ async def greet_new_member(client, member: ChatMemberUpdated):
 # and chatlog.py (group=2).
 @app.on_message(filters.new_chat_members, group=-4)
 async def welcome_backup(client, message: Message):
-    _log.info(
-        f"WELCOME_DEBUG: new_chat_members message fired in {message.chat.id} "
-        f"members={[m.id for m in message.new_chat_members]}"
-    )
-
     for new_user in message.new_chat_members:
         # Skip bot itself (handled by start.py)
         if new_user.id == app.id:
@@ -416,13 +378,12 @@ async def welcome_backup(client, message: Message):
         try:
             is_enabled = await get_welcome(chat_id)
         except Exception as e:
-            _log.error(f"WELCOME_DEBUG: backup get_welcome error: {e}")
+            _log.error(f"welcome backup get_welcome error: {e}")
             is_enabled = True
 
         if not is_enabled:
             continue
 
-        _log.info(f"WELCOME_DEBUG: BACKUP handler sending welcome for {new_user.id}")
         user = new_user
 
         pic_path = _FALLBACK_PIC
@@ -435,7 +396,7 @@ async def welcome_backup(client, message: Message):
                 )
                 pic_path = downloaded_pic
         except Exception as e:
-            _log.warning(f"WELCOME_DEBUG: backup pfp download failed: {e}")
+            _log.warning(f"welcome backup pfp download failed: {e}")
 
         old_msg = _temp.PREV_MSG.get(f"welcome-{chat_id}")
         if old_msg:
@@ -450,7 +411,7 @@ async def welcome_backup(client, message: Message):
                 pic_path, user.id, user.username
             )
         except Exception as e:
-            _log.error(f"WELCOME_DEBUG: backup image gen failed: {e}")
+            _log.error(f"welcome backup image gen failed: {e}")
             if downloaded_pic and os.path.exists(downloaded_pic):
                 try:
                     os.remove(downloaded_pic)
@@ -496,10 +457,9 @@ async def welcome_backup(client, message: Message):
 
             asyncio.create_task(_del())
             _temp.PREV_MSG[f"welcome-{chat_id}"] = msg
-            _log.info(f"WELCOME_DEBUG: backup welcome sent to {chat_id}")
 
         except Exception as e:
-            _log.error(f"WELCOME_DEBUG: backup send failed: {e}")
+            _log.error(f"welcome backup send failed: {e}")
 
         finally:
             if downloaded_pic and os.path.exists(downloaded_pic):
