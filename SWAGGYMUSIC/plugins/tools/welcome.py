@@ -83,7 +83,7 @@ _CIRCLE_PASTE_POS = (280, 232)
 
 # Text rendering — scaled from original to match smaller template
 _TEXT_FONT_SIZE = 53  # original 100 * 0.531
-_TEXT_COLOR = "#ffffff"  # white, matching the original working code
+_TEXT_COLOR = (225, 200, 145)  # gold/tan, matching template labels
 _UID_DRAW_POS = (1020, 712)  # original (1920,1340) scaled by 0.531
 _UNAME_DRAW_POS = (1020, 786)  # original (1920,1480) scaled by 0.531
 _MAX_TEXT_X = 1680  # right boundary for text truncation (scaled)
@@ -360,9 +360,9 @@ async def greet_new_member(client, member: ChatMemberUpdated):
                 ]
             ),
         )
-        # ── Schedule auto-delete after 10 seconds ──
+        # ── Schedule auto-delete after 3 minutes (180 seconds) ──
         async def _delete_welcome():
-            await asyncio.sleep(10)
+            await asyncio.sleep(180)
             try:
                 await msg.delete()
                 key = f"welcome-{chat_id}"
@@ -473,7 +473,7 @@ async def welcome_backup(client, message: Message):
             )
 
             async def _del():
-                await asyncio.sleep(10)
+                await asyncio.sleep(180)
                 try:
                     await msg.delete()
                 except Exception:
