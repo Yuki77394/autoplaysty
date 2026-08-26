@@ -77,6 +77,19 @@ _DOWNLOADS_DIR = "downloads"
 _CIRCLE_SIZE = (354, 354)
 _CIRCLE_PASTE_POS = (280, 232)  # center(457,409) - radius(177)
 
+# Text layout measured from the template's pre-printed "User id :" label:
+#   Label rendered with font2.ttf at ~34px, gold (230,210,160)
+#   Label left edge: x≈853, colon right edge: x≈986, baseline draw-y: 808
+#   NOTE: the template does NOT have a "Username :" label — we draw it.
+_TEXT_FONT_SIZE = 34
+_TEXT_COLOR = (230, 210, 160)  # gold, matches the template's pre-printed label
+_LABEL_X = 853
+_LABEL_Y = 808
+_VALUE_GAP = 15
+_LINE_SPACING = 62
+_UNAME_LABEL_Y = _LABEL_Y + _LINE_SPACING  # 870
+_MAX_TEXT_X = 1380  # right boundary for text truncation
+
 
 def _circle(pfp, size=None, brightness_factor=1.4):
     if size is None:
@@ -103,11 +116,33 @@ def _generate_welcome_image(pic_path, user_id, username):
     background.paste(pfp, _CIRCLE_PASTE_POS, pfp)
 
     draw = ImageDraw.Draw(background)
-    font = ImageFont.truetype(_FONT_PATH, 100)
+    font = ImageFont.truetype(_FONT_PATH, _TEXT_FONT_SIZE)
 
-    username_text = f"@{username}" if username else "Not Set"
-    draw.text((1920, 1340), str(user_id), font=font, fill="#ffffff")
-    draw.text((1920, 1480), username_text, font=font, fill="#ffffff")
+    # User ID value — placed right after the template's pre-printed "User id :" colon
+    uid_val_bbox = font.getbbox("User id :")
+    _uid_val_x = _LABEL_X + uid_val_bbox[2] + _VALUE_GAP
+    draw.text((_uid_val_x, _LABEL_Y), str(user_id), font=font, fill=_TEXT_COLOR)
+
+    # Username — the template does NOT have this label, so we draw both
+    uname_label = "Username :"
+    uname_val = f"@{username}" if username else "No Username"
+    uname_lbl_bbox = font.getbbox(uname_label)
+    _uname_val_x = _LABEL_X + uname_lbl_bbox[2] + _VALUE_GAP
+
+    # Truncate long usernames to stay within _MAX_TEXT_X
+    uname_val_w = font.getbbox(uname_val)[2]
+    if _uname_val_x + uname_val_w > _MAX_TEXT_X:
+        while len(uname_val) > 3:
+            test = uname_val + "..."
+            if font.getbbox(test)[2] + _uname_val_x <= _MAX_TEXT_X:
+                uname_val = test
+                break
+            uname_val = uname_val[:-1]
+        else:
+            uname_val += "..."
+
+    draw.text((_LABEL_X, _UNAME_LABEL_Y), uname_label, font=font, fill=_TEXT_COLOR)
+    draw.text((_uname_val_x, _UNAME_LABEL_Y), uname_val, font=font, fill=_TEXT_COLOR)
 
     os.makedirs(_DOWNLOADS_DIR, exist_ok=True)
     output_path = os.path.join(_DOWNLOADS_DIR, f"welcome_{user_id}.png")
