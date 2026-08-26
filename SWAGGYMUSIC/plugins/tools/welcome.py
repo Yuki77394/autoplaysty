@@ -71,7 +71,23 @@ _DOWNLOADS_DIR = "downloads"
 
 
 # ─── Image helpers ──────────────────────────────────────────────────────────
-def _circle(pfp, size=(720, 720), brightness_factor=1.4):
+# Frame dimensions measured from wel2.png (1734x907 background):
+#   Circular gold frame center: (457, 409)
+#   Dark circle interior radius: 178 px  →  diameter 356 px
+#   Gold ring: inner r≈187, outer r≈238, thickness ≈52 px
+_CIRCLE_SIZE = (354, 354)
+_CIRCLE_PASTE_POS = (280, 232)  # center(457,409) - radius(177)
+
+
+def _circle(pfp, size=None, brightness_factor=1.4):
+    if size is None:
+        size = _CIRCLE_SIZE
+    # Center-crop to square first so rectangular photos aren't stretched
+    w, h = pfp.size
+    min_dim = min(w, h)
+    left = (w - min_dim) // 2
+    top = (h - min_dim) // 2
+    pfp = pfp.crop((left, top, left + min_dim, top + min_dim))
     pfp = pfp.resize(size).convert("RGBA")
     pfp = ImageEnhance.Brightness(pfp).enhance(brightness_factor)
     mask = Image.new("L", size, 0)
@@ -84,8 +100,8 @@ def _circle(pfp, size=(720, 720), brightness_factor=1.4):
 def _generate_welcome_image(pic_path, user_id, username):
     background = Image.open(_WEL2_BG).convert("RGBA")
     pfp = Image.open(pic_path).convert("RGBA")
-    pfp = _circle(pfp, size=(720, 720), brightness_factor=1.3)
-    background.paste(pfp, (520, 420), pfp)
+    pfp = _circle(pfp, size=_CIRCLE_SIZE, brightness_factor=1.3)
+    background.paste(pfp, _CIRCLE_PASTE_POS, pfp)
 
     draw = ImageDraw.Draw(background)
     font = ImageFont.truetype(_FONT_PATH, 100)
