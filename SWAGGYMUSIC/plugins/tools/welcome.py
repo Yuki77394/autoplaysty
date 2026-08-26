@@ -77,17 +77,18 @@ _DOWNLOADS_DIR = "downloads"
 _CIRCLE_SIZE = (354, 354)
 _CIRCLE_PASTE_POS = (280, 232)  # center(457,409) - radius(177)
 
-# Text layout measured from the template's pre-printed "User id :" label:
-#   Label rendered with font2.ttf at ~34px, gold (230,210,160)
-#   Label left edge: x≈853, colon right edge: x≈986, baseline draw-y: 808
-#   NOTE: the template does NOT have a "Username :" label — we draw it.
+# Text layout measured from the template's pre-printed labels on wel2.png (1734x907):
+#   Both "User id :" and "Username :" are pre-printed on the template.
+#   Labels are left-aligned at x≈814, rendered with font2.ttf at 34px.
+#   "User id :" draw-y ≈ 763, colon ends at x ≈ 944.
+#   "Username :" draw-y ≈ 808, colon ends at x ≈ 998.
+#   DO NOT redraw the static labels — only render the dynamic values.
 _TEXT_FONT_SIZE = 34
 _TEXT_COLOR = (230, 210, 160)  # gold, matches the template's pre-printed label
-_LABEL_X = 853
-_LABEL_Y = 808
-_VALUE_GAP = 15
-_LINE_SPACING = 62
-_UNAME_LABEL_Y = _LABEL_Y + _LINE_SPACING  # 870
+_LABEL_X = 814
+_UID_LABEL_Y = 763
+_UNAME_LABEL_Y = 808
+_VALUE_GAP = 12
 _MAX_TEXT_X = 1380  # right boundary for text truncation
 
 
@@ -119,30 +120,28 @@ def _generate_welcome_image(pic_path, user_id, username):
     font = ImageFont.truetype(_FONT_PATH, _TEXT_FONT_SIZE)
 
     # User ID value — placed right after the template's pre-printed "User id :" colon
-    uid_val_bbox = font.getbbox("User id :")
-    _uid_val_x = _LABEL_X + uid_val_bbox[2] + _VALUE_GAP
-    draw.text((_uid_val_x, _LABEL_Y), str(user_id), font=font, fill=_TEXT_COLOR)
+    uid_label_bbox = font.getbbox("User id :")
+    uid_val_x = _LABEL_X + uid_label_bbox[2] + _VALUE_GAP
+    draw.text((uid_val_x, _UID_LABEL_Y), str(user_id), font=font, fill=_TEXT_COLOR)
 
-    # Username — the template does NOT have this label, so we draw both
-    uname_label = "Username :"
+    # Username value — placed right after the template's pre-printed "Username :" colon
+    uname_label_bbox = font.getbbox("Username :")
+    uname_val_x = _LABEL_X + uname_label_bbox[2] + _VALUE_GAP
     uname_val = f"@{username}" if username else "No Username"
-    uname_lbl_bbox = font.getbbox(uname_label)
-    _uname_val_x = _LABEL_X + uname_lbl_bbox[2] + _VALUE_GAP
 
     # Truncate long usernames to stay within _MAX_TEXT_X
     uname_val_w = font.getbbox(uname_val)[2]
-    if _uname_val_x + uname_val_w > _MAX_TEXT_X:
+    if uname_val_x + uname_val_w > _MAX_TEXT_X:
         while len(uname_val) > 3:
             test = uname_val + "..."
-            if font.getbbox(test)[2] + _uname_val_x <= _MAX_TEXT_X:
+            if font.getbbox(test)[2] + uname_val_x <= _MAX_TEXT_X:
                 uname_val = test
                 break
             uname_val = uname_val[:-1]
         else:
             uname_val += "..."
 
-    draw.text((_LABEL_X, _UNAME_LABEL_Y), uname_label, font=font, fill=_TEXT_COLOR)
-    draw.text((_uname_val_x, _UNAME_LABEL_Y), uname_val, font=font, fill=_TEXT_COLOR)
+    draw.text((uname_val_x, _UNAME_LABEL_Y), uname_val, font=font, fill=_TEXT_COLOR)
 
     os.makedirs(_DOWNLOADS_DIR, exist_ok=True)
     output_path = os.path.join(_DOWNLOADS_DIR, f"welcome_{user_id}.png")
@@ -344,7 +343,7 @@ async def greet_new_member(client, member: ChatMemberUpdated):
 
     # ── Send welcome message ──
     try:
-        username_display = f"@{user.username}" if user.username else "N/A"
+        username_display = f"@{user.username}" if user.username else "No Username"
         msg = await client.send_photo(
             chat_id,
             photo=welcome_img_path,
@@ -354,7 +353,7 @@ async def greet_new_member(client, member: ChatMemberUpdated):
 <u>**❖ ᴜsᴇʀ sʜᴏʀᴛ ɪɴғᴏ**</u>
 
 **➻ ɴᴀᴍᴇ »** {user.mention}
-**➻ ᴄʜᴀᴛ_ɪᴅ »** `{user.id}`
+**➻ ᴜsᴇʀ_ɪᴅ »** `{user.id}`
 **➻ ᴜ_ɴᴀᴍᴇ »** {username_display}
 
 **➻ ᴛʜᴀɴᴋs ғᴏʀ ᴊᴏɪɴɪɴɢ ᴜs ⚡️~!
@@ -455,7 +454,7 @@ async def welcome_backup(client, message: Message):
             continue
 
         try:
-            username_display = f"@{user.username}" if user.username else "N/A"
+            username_display = f"@{user.username}" if user.username else "No Username"
             msg = await client.send_photo(
                 chat_id,
                 photo=welcome_img_path,
@@ -465,7 +464,7 @@ async def welcome_backup(client, message: Message):
 <u>**❖ ᴜsᴇʀ sʜᴏʀᴛ ɪɴғᴏ**</u>
 
 **➻ ɴᴀᴍᴇ »** {user.mention}
-**➻ ᴄʜᴀᴛ_ɪᴅ »** `{user.id}`
+**➻ ᴜsᴇʀ_ɪᴅ »** `{user.id}`
 **➻ ᴜ_ɴᴀᴍᴇ »** {username_display}
 
 **➻ ᴛʜᴀɴᴋs ғᴏʀ ᴊᴏɪɴɪɴɢ ᴜs ⚡️~!
