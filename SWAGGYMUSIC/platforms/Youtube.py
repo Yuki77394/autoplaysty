@@ -12,7 +12,7 @@ API_URL = os.environ.get("SHRUTI_API_URL", "https://api01.shrutibots.site")
 
 API_KEY = os.environ.get(
     "SHRUTI_API_KEY",
-    "ShrutiBotsMrwjpyQgstL5lhqKGSmV"
+    "ShrutiBotsLnW9UWsHuHWgpKwdxsDR"
 )
 
 DOWNLOAD_DIR = "downloads"
