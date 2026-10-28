@@ -6,7 +6,7 @@ from typing import Union
 import yt_dlp
 from pyrogram.enums import MessageEntityType
 from pyrogram.types import Message
-from youtubesearchpython import VideosSearch
+from youtubesearchpython.__future__ import VideosSearch
 import aiohttp
  
 from SWAGGYMUSIC import app
