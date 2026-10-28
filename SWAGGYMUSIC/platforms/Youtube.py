@@ -93,14 +93,14 @@ async def _arc_request_download(video_id: str, is_video: bool) -> dict:
         async with session.get(
             f"{ARC_API_URL.rstrip('/')}/youtube/v2/download",
             params={"query": video_id, "isVideo": str(is_video).lower(), "api_key": ARC_API_KEY},
-            timeout=aiohttp.ClientTimeout(total=30),
+            timeout=aiohttp.ClientTimeout(total=12),
         ) as resp:
             if resp.status != 200:
                 return {}
             return await resp.json(content_type=None)
  
  
-async def _arc_poll_job(job_id: str, retries: int = 15, interval: int = 3) -> str | None:
+async def _arc_poll_job(job_id: str, retries: int = 24, interval: float = 0.75) -> str | None:
     async with aiohttp.ClientSession() as session:
         for _ in range(retries):
             async with session.get(
@@ -211,6 +211,18 @@ async def download_video(link: str) -> str:
         return None
  
  
+class _QuietYtDlpLogger:
+    """Keep extractor diagnostics out of Heroku logs; failures still trigger fallback."""
+    def debug(self, msg):
+        pass
+
+    def warning(self, msg):
+        pass
+
+    def error(self, msg):
+        pass
+
+
 async def _yt_direct_info(link: str) -> dict | None:
     """Resolve title, duration and a playable audio URL in one extraction.
 
@@ -224,6 +236,7 @@ async def _yt_direct_info(link: str) -> dict | None:
             "noplaylist": True,
             "quiet": True,
             "no_warnings": True,
+            "logger": _QuietYtDlpLogger(),
             "skip_download": True,
             "socket_timeout": 3,
             "retries": 0,
@@ -258,7 +271,7 @@ async def _yt_direct_info(link: str) -> dict | None:
                 "id": info.get("id") or "",
             }
     try:
-        return await asyncio.wait_for(asyncio.to_thread(_resolve), timeout=5.0)
+        return await asyncio.wait_for(asyncio.to_thread(_resolve), timeout=3.5)
     except Exception:
         return None
 
@@ -472,18 +485,68 @@ class YouTubeAPI:
             }, direct_id
 
         if "&" in original:
-            original = original.split("&")[0]
-        results = VideosSearch(original, limit=1)
-        result_list = (await results.next()).get("result") or []
+            original = original.split("&")[0].strip()
+        if not original:
+            raise ValueError("Empty YouTube search query")
+
+        # Primary search provider, with a bounded timeout.
+        try:
+            results = VideosSearch(original, limit=1)
+            result_list = (await asyncio.wait_for(results.next(), timeout=4.0)).get("result") or []
+        except Exception:
+            result_list = []
+
+        # Fallback to yt-dlp search if the search package is down/blocked.
+        if not result_list:
+            try:
+                opts = {
+                    "quiet": True,
+                    "no_warnings": True,
+                    "logger": _QuietYtDlpLogger(),
+                    "skip_download": True,
+                    "extract_flat": True,
+                    "socket_timeout": 3,
+                    "retries": 0,
+                    "default_search": "ytsearch1",
+                }
+                loop = asyncio.get_running_loop()
+                data = await asyncio.wait_for(
+                    loop.run_in_executor(
+                        None,
+                        lambda: yt_dlp.YoutubeDL(opts).extract_info(
+                            f"ytsearch1:{original}", download=False
+                        ),
+                    ),
+                    timeout=7.0,
+                )
+                entries = (data or {}).get("entries") or []
+                if entries and entries[0].get("id"):
+                    item = entries[0]
+                    vidid = item["id"]
+                    seconds = int(item.get("duration") or 0)
+                    duration_min = f"{seconds // 60}:{seconds % 60:02d}" if seconds else ""
+                    result_list = [{
+                        "title": item.get("title") or original,
+                        "link": f"https://www.youtube.com/watch?v={vidid}",
+                        "id": vidid,
+                        "duration": duration_min,
+                        "thumbnails": [{"url": item.get("thumbnail") or f"https://i.ytimg.com/vi/{vidid}/hqdefault.jpg"}],
+                    }]
+            except Exception:
+                result_list = []
+
         if not result_list:
             raise ValueError("No YouTube search result found")
+
         result = result_list[0]
+        thumbnails = result.get("thumbnails") or []
+        thumbnail = (thumbnails[0].get("url") if thumbnails else "") or f"https://i.ytimg.com/vi/{result.get('id')}/hqdefault.jpg"
         track_details = {
-            "title": result["title"],
-            "link": result["link"],
+            "title": result.get("title") or original,
+            "link": result.get("link") or f"https://www.youtube.com/watch?v={result['id']}",
             "vidid": result["id"],
             "duration_min": result.get("duration") or "",
-            "thumb": result["thumbnails"][0]["url"].split("?")[0],
+            "thumb": thumbnail.split("?")[0],
         }
         return track_details, result["id"]
  
