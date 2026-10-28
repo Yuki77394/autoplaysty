@@ -6,7 +6,7 @@ from pyrogram.types import InlineKeyboardMarkup
 
 import config
 from SWAGGYMUSIC import Carbon, YouTube, app
-from SWAGGYMUSIC.core.call import JARVIS
+from SWAGGYMUSIC.core.call import Swaggy
 from SWAGGYMUSIC.misc import db
 from SWAGGYMUSIC.utils.database import (
     add_active_video_chat,
@@ -18,7 +18,7 @@ from SWAGGYMUSIC.utils.inline import (
     close_markup,
     stream_markup,
 )
-from SWAGGYMUSIC.utils.pastebin import VIVAANBIN
+from SWAGGYMUSIC.utils.pastebin import SwaggyBin
 from SWAGGYMUSIC import schedule_stream_card
 from SWAGGYMUSIC.utils.stream.queue import (
     put_queue,
