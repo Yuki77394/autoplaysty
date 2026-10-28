@@ -5,26 +5,26 @@ from typing import Union
 from pyrogram.types import InlineKeyboardMarkup
 
 import config
-from VIVAANXMUSIC import Carbon, YouTube, app
-from VIVAANXMUSIC.core.call import JARVIS
-from VIVAANXMUSIC.misc import db
-from VIVAANXMUSIC.utils.database import (
+from SWAGGYMUSIC import Carbon, YouTube, app
+from SWAGGYMUSIC.core.call import JARVIS
+from SWAGGYMUSIC.misc import db
+from SWAGGYMUSIC.utils.database import (
     add_active_video_chat,
     is_active_chat,
 )
-from VIVAANXMUSIC.utils.exceptions import AssistantErr
-from VIVAANXMUSIC.utils.inline import (
+from SWAGGYMUSIC.utils.exceptions import AssistantErr
+from SWAGGYMUSIC.utils.inline import (
     aq_markup,
     close_markup,
     stream_markup,
 )
-from VIVAANXMUSIC.utils.pastebin import VIVAANBIN
-from VIVAANXMUSIC.utils.stream.cards import schedule_stream_card
-from VIVAANXMUSIC.utils.stream.queue import (
+from SWAGGYMUSIC.utils.pastebin import VIVAANBIN
+from SWAGGYMUSIC import schedule_stream_card
+from SWAGGYMUSIC.utils.stream.queue import (
     put_queue,
     put_queue_index,
 )
-from VIVAANXMUSIC.utils.errors import capture_internal_err
+from SWAGGYMUSIC.utils.errors import capture_internal_err
 
 
 # =========================================================
