@@ -6,7 +6,7 @@ from typing import Union
 import yt_dlp
 from pyrogram.enums import MessageEntityType
 from pyrogram.types import Message
-from py_yt import VideosSearch
+from youtubesearchpython import VideosSearch, Playlist
 import aiohttp
  
 from SWAGGYMUSIC import app
@@ -19,24 +19,81 @@ _DIRECT_INFO_CACHE: dict[str, dict] = {}
 _DIRECT_URL_CACHE_TTL = 8 * 60
 
 
-async def _search_video_metadata(video_id: str) -> dict:
-    """Fast metadata fallback when YouTube's media extractor is blocked.
+async def _search_results(query: str, limit: int = 1) -> list[dict]:
+    """Search YouTube with youtube-search-python first, then yt-dlp.
 
-    Search by the 11-character ID, never by the full URL. This avoids the
-    old behaviour where a direct URL was accidentally treated as a search.
+    Returns a consistent result shape so callers do not fail when one provider
+    changes its response format or temporarily stops responding.
     """
+    query = str(query or "").strip()
+    if not query:
+        return []
+
     try:
-        result = (await asyncio.wait_for(
-            VideosSearch(video_id, limit=1).next(),
-            timeout=2.5,
-        )).get("result") or []
-        if not result:
+        response = await asyncio.wait_for(
+            VideosSearch(query, limit=limit).next(), timeout=7.0
+        )
+        results = (response or {}).get("result") or []
+        if results:
+            return results[:limit]
+    except Exception:
+        pass
+
+    def _fallback_search():
+        opts = {
+            "quiet": True,
+            "no_warnings": True,
+            "skip_download": True,
+            "extract_flat": True,
+            "ignoreerrors": True,
+            "socket_timeout": 8,
+            "retries": 1,
+        }
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            return ydl.extract_info(f"ytsearch{max(1, int(limit))}:{query}", download=False)
+
+    try:
+        data = await asyncio.wait_for(asyncio.to_thread(_fallback_search), timeout=18.0)
+        entries = (data or {}).get("entries") or []
+        normalized = []
+        for item in entries:
+            if not item or not item.get("id"):
+                continue
+            vid = str(item["id"])
+            seconds = int(item.get("duration") or 0)
+            thumbs = item.get("thumbnails") or []
+            thumb = item.get("thumbnail") or (thumbs[-1].get("url") if thumbs else "")
+            normalized.append({
+                "title": item.get("title") or query,
+                "id": vid,
+                "link": item.get("webpage_url") or f"https://www.youtube.com/watch?v={vid}",
+                "duration": f"{seconds // 60}:{seconds % 60:02d}" if seconds else "",
+                "thumbnails": [{"url": thumb}] if thumb else [],
+                "thumbnail": thumb,
+            })
+        return normalized[:limit]
+    except Exception:
+        return []
+
+
+async def _search_video_metadata(video_id: str) -> dict:
+    """Fetch metadata for a video ID without treating its URL as a query."""
+    try:
+        results = await _search_results(video_id, 1)
+        if not results:
             return {}
-        item = result[0]
+        item = results[0]
+        thumbs = item.get("thumbnails") or []
+        thumb = item.get("thumbnail") or (thumbs[0].get("url") if thumbs else "")
+        duration = item.get("duration") or ""
+        try:
+            seconds = int(time_to_seconds(duration)) if duration else int(item.get("duration_seconds") or 0)
+        except Exception:
+            seconds = int(item.get("duration_seconds") or 0)
         return {
             "title": item.get("title") or "",
-            "duration": int(time_to_seconds(item.get("duration"))) if item.get("duration") else 0,
-            "thumbnail": ((item.get("thumbnails") or [{}])[0].get("url") or "").split("?")[0],
+            "duration": seconds,
+            "thumbnail": str(thumb or "").split("?")[0],
             "id": item.get("id") or video_id,
         }
     except Exception:
@@ -93,14 +150,14 @@ async def _arc_request_download(video_id: str, is_video: bool) -> dict:
         async with session.get(
             f"{ARC_API_URL.rstrip('/')}/youtube/v2/download",
             params={"query": video_id, "isVideo": str(is_video).lower(), "api_key": ARC_API_KEY},
-            timeout=aiohttp.ClientTimeout(total=12),
+            timeout=aiohttp.ClientTimeout(total=30),
         ) as resp:
             if resp.status != 200:
                 return {}
             return await resp.json(content_type=None)
  
  
-async def _arc_poll_job(job_id: str, retries: int = 24, interval: float = 0.75) -> str | None:
+async def _arc_poll_job(job_id: str, retries: int = 15, interval: int = 3) -> str | None:
     async with aiohttp.ClientSession() as session:
         for _ in range(retries):
             async with session.get(
@@ -152,7 +209,7 @@ async def _save_from_cdn(cdn: str, file_path: str) -> bool:
  
  
 async def download_song(link: str) -> str:
-    video_id = link.split("v=")[-1].split("&")[0] if "v=" in link else link
+    video_id = _youtube_video_id(link) or str(link).strip()
     if not video_id or len(video_id) < 3:
         return None
  
@@ -182,7 +239,7 @@ async def download_song(link: str) -> str:
  
  
 async def download_video(link: str) -> str:
-    video_id = link.split("v=")[-1].split("&")[0] if "v=" in link else link
+    video_id = _youtube_video_id(link) or str(link).strip()
     if not video_id or len(video_id) < 3:
         return None
  
@@ -211,18 +268,6 @@ async def download_video(link: str) -> str:
         return None
  
  
-class _QuietYtDlpLogger:
-    """Keep extractor diagnostics out of Heroku logs; failures still trigger fallback."""
-    def debug(self, msg):
-        pass
-
-    def warning(self, msg):
-        pass
-
-    def error(self, msg):
-        pass
-
-
 async def _yt_direct_info(link: str) -> dict | None:
     """Resolve title, duration and a playable audio URL in one extraction.
 
@@ -236,7 +281,6 @@ async def _yt_direct_info(link: str) -> dict | None:
             "noplaylist": True,
             "quiet": True,
             "no_warnings": True,
-            "logger": _QuietYtDlpLogger(),
             "skip_download": True,
             "socket_timeout": 3,
             "retries": 0,
@@ -271,7 +315,7 @@ async def _yt_direct_info(link: str) -> dict | None:
                 "id": info.get("id") or "",
             }
     try:
-        return await asyncio.wait_for(asyncio.to_thread(_resolve), timeout=3.5)
+        return await asyncio.wait_for(asyncio.to_thread(_resolve), timeout=5.0)
     except Exception:
         return None
 
@@ -327,68 +371,50 @@ class YouTubeAPI:
             return title, duration_min, seconds, thumbnail, direct_id
 
         query = original.split("&", 1)[0].strip()
-        try:
-            results = VideosSearch(query, limit=1)
-            result_list = (await asyncio.wait_for(results.next(), timeout=8)).get("result") or []
-            if result_list:
-                result = result_list[0]
-                duration_min = result.get("duration") or ""
-                duration_sec = int(time_to_seconds(duration_min)) if duration_min else 0
-                thumbnail = ((result.get("thumbnails") or [{}])[0].get("url") or "").split("?")[0]
-                return result.get("title", query), duration_min, duration_sec, thumbnail, result.get("id")
-        except Exception:
-            pass
-
-        # Fallback search avoids making a failed VideosSearch call fatal.
-        try:
-            opts = {"quiet": True, "no_warnings": True, "skip_download": True,
-                    "extract_flat": True, "default_search": "ytsearch1"}
-            loop = asyncio.get_running_loop()
-            data = await asyncio.wait_for(
-                loop.run_in_executor(None, lambda: yt_dlp.YoutubeDL(opts).extract_info(f"ytsearch1:{query}", download=False)),
-                timeout=15,
-            )
-            entries = (data or {}).get("entries") or []
-            if entries:
-                result = entries[0]
-                vidid = result.get("id")
-                if vidid:
-                    title = result.get("title") or query
-                    seconds = int(result.get("duration") or 0)
-                    duration_min = f"{seconds // 60}:{seconds % 60:02d}" if seconds else "00:00"
-                    thumbnail = result.get("thumbnail") or f"https://i.ytimg.com/vi/{vidid}/hqdefault.jpg"
-                    return title, duration_min, seconds, thumbnail, vidid
-        except Exception:
-            pass
+        result_list = await _search_results(query, 1)
+        if result_list:
+            result = result_list[0]
+            duration_min = result.get("duration") or ""
+            duration_sec = int(time_to_seconds(duration_min)) if duration_min else int(result.get("duration_seconds") or 0)
+            thumbs = result.get("thumbnails") or []
+            thumbnail = result.get("thumbnail") or (thumbs[0].get("url") if thumbs else "")
+            vidid = result.get("id")
+            if vidid:
+                return result.get("title") or query, duration_min or (f"{duration_sec // 60}:{duration_sec % 60:02d}" if duration_sec else "00:00"), duration_sec, str(thumbnail or f"https://i.ytimg.com/vi/{vidid}/hqdefault.jpg").split("?")[0], vidid
         raise ValueError("No YouTube search result found for query")
 
     async def title(self, link: str, videoid: Union[bool, str] = None):
-        if videoid:
-            link = self.base + link
-        if "&" in link:
-            link = link.split("&")[0]
-        results = VideosSearch(link, limit=1)
-        for result in (await results.next())["result"]:
-            return result["title"]
- 
+        value = self.base + str(link) if videoid else str(link or "")
+        direct_id = _youtube_video_id(value)
+        if direct_id:
+            info = await _yt_direct_info(f"https://www.youtube.com/watch?v={direct_id}") or await _search_video_metadata(direct_id)
+            return info.get("title") or await _oembed_title(direct_id) or "YouTube Track"
+        results = await _search_results(value.split("&", 1)[0], 1)
+        return results[0].get("title") if results else None
+
     async def duration(self, link: str, videoid: Union[bool, str] = None):
-        if videoid:
-            link = self.base + link
-        if "&" in link:
-            link = link.split("&")[0]
-        results = VideosSearch(link, limit=1)
-        for result in (await results.next())["result"]:
-            return result["duration"]
- 
+        value = self.base + str(link) if videoid else str(link or "")
+        direct_id = _youtube_video_id(value)
+        if direct_id:
+            info = await _yt_direct_info(f"https://www.youtube.com/watch?v={direct_id}") or await _search_video_metadata(direct_id)
+            seconds = int(info.get("duration") or 0)
+            return f"{seconds // 60}:{seconds % 60:02d}" if seconds else "00:00"
+        results = await _search_results(value.split("&", 1)[0], 1)
+        return (results[0].get("duration") or "00:00") if results else None
+
     async def thumbnail(self, link: str, videoid: Union[bool, str] = None):
-        if videoid:
-            link = self.base + link
-        if "&" in link:
-            link = link.split("&")[0]
-        results = VideosSearch(link, limit=1)
-        for result in (await results.next())["result"]:
-            return result["thumbnails"][0]["url"].split("?")[0]
- 
+        value = self.base + str(link) if videoid else str(link or "")
+        direct_id = _youtube_video_id(value)
+        if direct_id:
+            info = await _yt_direct_info(f"https://www.youtube.com/watch?v={direct_id}") or await _search_video_metadata(direct_id)
+            return (info.get("thumbnail") or f"https://i.ytimg.com/vi/{direct_id}/hqdefault.jpg").split("?")[0]
+        results = await _search_results(value.split("&", 1)[0], 1)
+        if not results:
+            return None
+        item = results[0]
+        thumbs = item.get("thumbnails") or []
+        return (item.get("thumbnail") or (thumbs[0].get("url") if thumbs else "") or "").split("?")[0] or None
+
     async def video(self, link: str, videoid: Union[bool, str] = None):
         if videoid:
             link = self.base + link
@@ -427,7 +453,11 @@ class YouTubeAPI:
         # VideosSearch treats the URL as a search query and can return an
         # empty result when YouTube search/extraction is rate limited.
         original = str(link or "").strip()
-        direct_id = str(videoid).strip() if videoid else _youtube_video_id(original)
+        # `videoid` may be a real ID or a boolean flag used by older callers.
+        if isinstance(videoid, str) and videoid.lower() not in {"true", "false"}:
+            direct_id = _youtube_video_id(videoid) or videoid.strip()
+        else:
+            direct_id = _youtube_video_id(self.base + original if videoid else original)
 
         if direct_id:
             yturl = f"https://www.youtube.com/watch?v={direct_id}"
@@ -485,70 +515,24 @@ class YouTubeAPI:
             }, direct_id
 
         if "&" in original:
-            original = original.split("&")[0].strip()
-        if not original:
-            raise ValueError("Empty YouTube search query")
-
-        # Primary search provider, with a bounded timeout.
-        try:
-            results = VideosSearch(original, limit=1)
-            result_list = (await asyncio.wait_for(results.next(), timeout=4.0)).get("result") or []
-        except Exception:
-            result_list = []
-
-        # Fallback to yt-dlp search if the search package is down/blocked.
+            original = original.split("&", 1)[0]
+        result_list = await _search_results(original, 1)
         if not result_list:
-            try:
-                opts = {
-                    "quiet": True,
-                    "no_warnings": True,
-                    "logger": _QuietYtDlpLogger(),
-                    "skip_download": True,
-                    "extract_flat": True,
-                    "socket_timeout": 3,
-                    "retries": 0,
-                    "default_search": "ytsearch1",
-                }
-                loop = asyncio.get_running_loop()
-                data = await asyncio.wait_for(
-                    loop.run_in_executor(
-                        None,
-                        lambda: yt_dlp.YoutubeDL(opts).extract_info(
-                            f"ytsearch1:{original}", download=False
-                        ),
-                    ),
-                    timeout=7.0,
-                )
-                entries = (data or {}).get("entries") or []
-                if entries and entries[0].get("id"):
-                    item = entries[0]
-                    vidid = item["id"]
-                    seconds = int(item.get("duration") or 0)
-                    duration_min = f"{seconds // 60}:{seconds % 60:02d}" if seconds else ""
-                    result_list = [{
-                        "title": item.get("title") or original,
-                        "link": f"https://www.youtube.com/watch?v={vidid}",
-                        "id": vidid,
-                        "duration": duration_min,
-                        "thumbnails": [{"url": item.get("thumbnail") or f"https://i.ytimg.com/vi/{vidid}/hqdefault.jpg"}],
-                    }]
-            except Exception:
-                result_list = []
-
-        if not result_list:
-            raise ValueError("No YouTube search result found")
-
+            raise ValueError("No YouTube search result found for query")
         result = result_list[0]
-        thumbnails = result.get("thumbnails") or []
-        thumbnail = (thumbnails[0].get("url") if thumbnails else "") or f"https://i.ytimg.com/vi/{result.get('id')}/hqdefault.jpg"
+        vidid = result.get("id")
+        if not vidid:
+            raise ValueError("YouTube search result has no video ID")
+        thumbs = result.get("thumbnails") or []
+        thumbnail = result.get("thumbnail") or (thumbs[0].get("url") if thumbs else "")
         track_details = {
             "title": result.get("title") or original,
-            "link": result.get("link") or f"https://www.youtube.com/watch?v={result['id']}",
-            "vidid": result["id"],
-            "duration_min": result.get("duration") or "",
-            "thumb": thumbnail.split("?")[0],
+            "link": result.get("link") or result.get("webpage_url") or f"https://www.youtube.com/watch?v={vidid}",
+            "vidid": vidid,
+            "duration_min": result.get("duration") or "00:00",
+            "thumb": (thumbnail or f"https://i.ytimg.com/vi/{vidid}/hqdefault.jpg").split("?")[0],
         }
-        return track_details, result["id"]
+        return track_details, vidid
  
     async def formats(self, link: str, videoid: Union[bool, str] = None):
         if videoid:
@@ -578,18 +562,20 @@ class YouTubeAPI:
         return formats_available, link
  
     async def slider(self, link: str, query_type: int, videoid: Union[bool, str] = None):
-        if videoid:
-            link = self.base + link
-        if "&" in link:
-            link = link.split("&")[0]
-        a = VideosSearch(link, limit=10)
-        result = (await a.next()).get("result")
-        title = result[query_type]["title"]
-        duration_min = result[query_type]["duration"]
-        vidid = result[query_type]["id"]
-        thumbnail = result[query_type]["thumbnails"][0]["url"].split("?")[0]
-        return title, duration_min, thumbnail, vidid
- 
+        value = self.base + str(link) if videoid else str(link or "")
+        if "&" in value:
+            value = value.split("&", 1)[0]
+        results = await _search_results(value, max(10, int(query_type) + 1))
+        if not results or query_type < 0 or query_type >= len(results):
+            raise ValueError("No YouTube search results available for slider")
+        item = results[query_type]
+        vidid = item.get("id")
+        if not vidid:
+            raise ValueError("YouTube search result has no video ID")
+        thumbs = item.get("thumbnails") or []
+        thumbnail = item.get("thumbnail") or (thumbs[0].get("url") if thumbs else "")
+        return item.get("title") or "YouTube Track", item.get("duration") or "00:00", (thumbnail or f"https://i.ytimg.com/vi/{vidid}/hqdefault.jpg").split("?")[0], vidid
+
     async def stream_url(self, link: str, videoid: Union[bool, str] = None):
         if videoid:
             link = self.base + str(link)
@@ -626,8 +612,29 @@ class YouTubeAPI:
         title: Union[bool, str] = None,
     ) -> str:
         if videoid:
-            link = self.base + link
+            link = self.base + str(link)
         try:
+            # Audio: stream the resolved media URL directly instead of waiting
+            # for a full MP3 download through the API. track()/details() may
+            # already have populated this cache, so the common path is quick.
+            if not video:
+                canonical = _canonical_youtube_url(str(link))
+                video_id = _youtube_video_id(canonical)
+                if video_id:
+                    key = f"https://www.youtube.com/watch?v={video_id}"
+                    now = time.monotonic()
+                    cached = _DIRECT_URL_CACHE.get(key)
+                    if cached and cached[1] > now:
+                        return cached[0], True
+                    info = await _yt_direct_info(key)
+                    media_url = (info or {}).get("url")
+                    if media_url:
+                        _DIRECT_URL_CACHE[key] = (media_url, time.monotonic() + _DIRECT_URL_CACHE_TTL)
+                        if info:
+                            _DIRECT_INFO_CACHE[key] = info
+                        return media_url, True
+
+            # Keep the existing API download path as a fallback, and for video.
             if video:
                 downloaded_file = await download_video(link)
             else:
