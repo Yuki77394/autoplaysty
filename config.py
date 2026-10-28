@@ -34,8 +34,9 @@ GIT_TOKEN = getenv("GIT_TOKEN", None)
 YOUTUBE_API_URL = getenv("API_URL", "http://yt.riteshyt.in")
 YOUTUBE_API_KEY = getenv("API_KEY", "riteshfree576fd88ed84a3f46c84fd556")
 
-YTPROXY_URL = getenv("YTPROXY_URL", 'https://tgapi.xbitcode.com') ## xBit Music Endpoint.
-YT_API_KEY = getenv("YT_API_KEY" , None ) ## Your API key like: xbit_10000000xx0233 Get from  https://t.me/tgmusic_apibot
+# Vars For API End Pont.
+ARC_API_URL = getenv("ARC_API_URL", "https://api.arcmusic.fun")
+ARC_API_KEY = getenv("ARC_API_KEY", "ARC4671e290cb3ff11230be62")
 
 PRIVACY_LINK = getenv("PRIVACY_LINK", "")
 SUPPORT_CHANNEL = getenv("SUPPORT_CHANNEL", "https://t.me/SpicyxNetwork")
