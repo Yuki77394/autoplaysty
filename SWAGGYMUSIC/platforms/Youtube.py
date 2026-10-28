@@ -17,14 +17,14 @@ from config import ARC_API_URL, ARC_API_KEY
 _DIRECT_URL_CACHE: dict[str, tuple[str, float]] = {}
 _DIRECT_INFO_CACHE: dict[str, dict] = {}
 _DIRECT_URL_CACHE_TTL = 8 * 60
-# Cache failed extractions briefly too: avoid repeating a blocked YouTube request
-# for every metadata method/track action. This is not an authentication bypass.
+# Avoid repeating slow extraction attempts when YouTube rejects a request.
+# This is only a short failure cache; it does not bypass authentication checks.
 _DIRECT_INFO_FAILURE_CACHE: dict[str, float] = {}
 _DIRECT_INFO_FAILURE_TTL = 30
 
 
 class _QuietYtDlpLogger:
-    """Keep expected upstream extractor failures out of worker logs."""
+    """Silence expected upstream extractor failures; callers use fallback paths."""
     def debug(self, msg):
         pass
 
@@ -45,9 +45,15 @@ async def _search_results(query: str, limit: int = 1) -> list[dict]:
     if not query:
         return []
 
+    def _primary_search():
+        # youtube-search-python's standard VideosSearch API is synchronous.
+        # Calling .next() directly in an async handler blocks the bot event loop;
+        # isolate it in a worker thread and apply a real timeout.
+        return VideosSearch(query, limit=limit).next()
+
     try:
         response = await asyncio.wait_for(
-            VideosSearch(query, limit=limit).next(), timeout=7.0
+            asyncio.to_thread(_primary_search), timeout=5.0
         )
         results = (response or {}).get("result") or []
         if results:
@@ -62,14 +68,14 @@ async def _search_results(query: str, limit: int = 1) -> list[dict]:
             "skip_download": True,
             "extract_flat": True,
             "ignoreerrors": True,
-            "socket_timeout": 8,
-            "retries": 1,
+            "socket_timeout": 4,
+            "retries": 0,
         }
         with yt_dlp.YoutubeDL(opts) as ydl:
             return ydl.extract_info(f"ytsearch{max(1, int(limit))}:{query}", download=False)
 
     try:
-        data = await asyncio.wait_for(asyncio.to_thread(_fallback_search), timeout=18.0)
+        data = await asyncio.wait_for(asyncio.to_thread(_fallback_search), timeout=8.0)
         entries = (data or {}).get("entries") or []
         normalized = []
         for item in entries:
@@ -95,7 +101,9 @@ async def _search_results(query: str, limit: int = 1) -> list[dict]:
 async def _search_video_metadata(video_id: str) -> dict:
     """Fetch metadata for a video ID without treating its URL as a query."""
     try:
-        results = await _search_results(video_id, 1)
+        # Metadata is a fallback only; keep it bounded so a blocked search does
+        # not hold /play for the full yt-dlp retry window.
+        results = await asyncio.wait_for(_search_results(video_id, 1), timeout=4.0)
         if not results:
             return {}
         item = results[0]
@@ -285,17 +293,21 @@ async def download_video(link: str) -> str:
  
  
 async def _yt_direct_info(link: str) -> dict | None:
-    """Resolve audio metadata/URL quickly, reusing successful and failed lookups.
+    """Resolve metadata and a playable URL, with bounded retries and caching.
 
-    YouTube may reject datacenter requests with an authentication challenge.
-    That failure is cached briefly and returned to the caller so the existing
-    metadata/API-download fallback can run without repeatedly blocking playback.
-    This deliberately does not attempt to bypass YouTube's challenge.
+    Extraction runs in a worker thread. Successful URLs are reused from the
+    normal URL cache; failed lookups are briefly cached to avoid repeatedly
+    blocking play/metadata calls when YouTube rejects a datacenter request.
+    This does not bypass YouTube authentication or anti-bot checks.
     """
     link = _canonical_youtube_url(str(link or "").strip())
+    if not link:
+        return None
+
     now = time.monotonic()
     cached = _DIRECT_INFO_CACHE.get(link)
-    if cached and cached.get("url") and _DIRECT_URL_CACHE.get(link, (None, 0))[1] > now:
+    url_cache = _DIRECT_URL_CACHE.get(link)
+    if cached and cached.get("url") and url_cache and url_cache[1] > now:
         return dict(cached)
     if _DIRECT_INFO_FAILURE_CACHE.get(link, 0) > now:
         return None
@@ -313,6 +325,11 @@ async def _yt_direct_info(link: str) -> dict | None:
             "fragment_retries": 0,
             "extractor_retries": 0,
             "skip_unavailable_fragments": True,
+            "extractor_args": {
+                "youtube": {
+                    "player_client": ["web_safari", "mweb", "android"],
+                }
+            },
         }
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(link, download=False)
@@ -327,6 +344,8 @@ async def _yt_direct_info(link: str) -> dict | None:
                     if fmt_url and acodec and acodec != "none" and (not vcodec or vcodec == "none"):
                         url = fmt_url
                         break
+            if not url:
+                return None
             return {
                 "url": url,
                 "title": info.get("title") or "",
@@ -334,15 +353,18 @@ async def _yt_direct_info(link: str) -> dict | None:
                 "thumbnail": info.get("thumbnail") or "",
                 "id": info.get("id") or "",
             }
+
     try:
-        result = await asyncio.wait_for(asyncio.to_thread(_resolve), timeout=3.0)
-        if result and result.get("url"):
-            _DIRECT_INFO_CACHE[link] = result
-            _DIRECT_URL_CACHE[link] = (result["url"], time.monotonic() + _DIRECT_URL_CACHE_TTL)
-            _DIRECT_INFO_FAILURE_CACHE.pop(link, None)
-            return dict(result)
+        result = await asyncio.wait_for(asyncio.to_thread(_resolve), timeout=4.0)
     except Exception:
-        pass
+        result = None
+
+    if result and result.get("url"):
+        _DIRECT_INFO_CACHE[link] = dict(result)
+        _DIRECT_URL_CACHE[link] = (result["url"], time.monotonic() + _DIRECT_URL_CACHE_TTL)
+        _DIRECT_INFO_FAILURE_CACHE.pop(link, None)
+        return dict(result)
+
     _DIRECT_INFO_FAILURE_CACHE[link] = time.monotonic() + _DIRECT_INFO_FAILURE_TTL
     return None
 
@@ -461,7 +483,8 @@ class YouTubeAPI:
         if "&" in link:
             link = link.split("&")[0]
         try:
-            plist = await Playlist.get(link)
+            # Playlist.get from the standard package is synchronous too.
+            plist = await asyncio.wait_for(asyncio.to_thread(Playlist.get, link), timeout=8.0)
         except Exception:
             return []
         videos = plist.get("videos") or []
