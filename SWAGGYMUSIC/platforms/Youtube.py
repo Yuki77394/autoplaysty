@@ -17,6 +17,22 @@ from config import ARC_API_URL, ARC_API_KEY
 _DIRECT_URL_CACHE: dict[str, tuple[str, float]] = {}
 _DIRECT_INFO_CACHE: dict[str, dict] = {}
 _DIRECT_URL_CACHE_TTL = 8 * 60
+# Cache failed extractions briefly too: avoid repeating a blocked YouTube request
+# for every metadata method/track action. This is not an authentication bypass.
+_DIRECT_INFO_FAILURE_CACHE: dict[str, float] = {}
+_DIRECT_INFO_FAILURE_TTL = 30
+
+
+class _QuietYtDlpLogger:
+    """Keep expected upstream extractor failures out of worker logs."""
+    def debug(self, msg):
+        pass
+
+    def warning(self, msg):
+        pass
+
+    def error(self, msg):
+        pass
 
 
 async def _search_results(query: str, limit: int = 1) -> list[dict]:
@@ -269,30 +285,34 @@ async def download_video(link: str) -> str:
  
  
 async def _yt_direct_info(link: str) -> dict | None:
-    """Resolve title, duration and a playable audio URL in one extraction.
+    """Resolve audio metadata/URL quickly, reusing successful and failed lookups.
 
-    The extraction is isolated in a worker thread so it never blocks the bot
-    event loop. Authentication/cookie errors are swallowed and handled by the
-    normal metadata/download fallback instead of being shown to users.
+    YouTube may reject datacenter requests with an authentication challenge.
+    That failure is cached briefly and returned to the caller so the existing
+    metadata/API-download fallback can run without repeatedly blocking playback.
+    This deliberately does not attempt to bypass YouTube's challenge.
     """
+    link = _canonical_youtube_url(str(link or "").strip())
+    now = time.monotonic()
+    cached = _DIRECT_INFO_CACHE.get(link)
+    if cached and cached.get("url") and _DIRECT_URL_CACHE.get(link, (None, 0))[1] > now:
+        return dict(cached)
+    if _DIRECT_INFO_FAILURE_CACHE.get(link, 0) > now:
+        return None
+
     def _resolve():
         opts = {
             "format": "bestaudio[acodec!=none]/bestaudio/best",
             "noplaylist": True,
             "quiet": True,
             "no_warnings": True,
+            "logger": _QuietYtDlpLogger(),
             "skip_download": True,
-            "socket_timeout": 3,
+            "socket_timeout": 2,
             "retries": 0,
             "fragment_retries": 0,
             "extractor_retries": 0,
             "skip_unavailable_fragments": True,
-            "concurrent_fragment_downloads": 4,
-            "extractor_args": {
-                "youtube": {
-                    "player_client": ["web_safari", "mweb", "android"],
-                }
-            },
         }
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(link, download=False)
@@ -315,9 +335,16 @@ async def _yt_direct_info(link: str) -> dict | None:
                 "id": info.get("id") or "",
             }
     try:
-        return await asyncio.wait_for(asyncio.to_thread(_resolve), timeout=5.0)
+        result = await asyncio.wait_for(asyncio.to_thread(_resolve), timeout=3.0)
+        if result and result.get("url"):
+            _DIRECT_INFO_CACHE[link] = result
+            _DIRECT_URL_CACHE[link] = (result["url"], time.monotonic() + _DIRECT_URL_CACHE_TTL)
+            _DIRECT_INFO_FAILURE_CACHE.pop(link, None)
+            return dict(result)
     except Exception:
-        return None
+        pass
+    _DIRECT_INFO_FAILURE_CACHE[link] = time.monotonic() + _DIRECT_INFO_FAILURE_TTL
+    return None
 
 
 async def _yt_direct_audio_url(link: str) -> str | None:
