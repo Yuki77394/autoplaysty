@@ -36,7 +36,7 @@ YOUTUBE_API_KEY = getenv("API_KEY", "riteshfree576fd88ed84a3f46c84fd556")
 
 # Vars For API End Pont.
 ARC_API_URL = getenv("ARC_API_URL", "https://api.arcmusic.fun")
-ARC_API_KEY = getenv("ARC_API_KEY", "ARC4671e290cb3ff11230be62")
+ARC_API_KEY = getenv("ARC_API_KEY", "ARCbb2204210054d2c25478e9")
 
 PRIVACY_LINK = getenv("PRIVACY_LINK", "")
 SUPPORT_CHANNEL = getenv("SUPPORT_CHANNEL", "https://t.me/SpicyxNetwork")
