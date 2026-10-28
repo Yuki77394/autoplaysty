@@ -298,19 +298,57 @@ class YouTubeAPI:
         return None
  
     async def details(self, link: str, videoid: Union[bool, str] = None):
+        """Return track metadata, with yt-dlp fallback if search API fails."""
+        original = str(link or "").strip()
         if videoid:
-            link = self.base + link
-        if "&" in link:
-            link = link.split("&")[0]
-        results = VideosSearch(link, limit=1)
-        for result in (await results.next())["result"]:
-            title = result["title"]
-            duration_min = result["duration"]
-            thumbnail = result["thumbnails"][0]["url"].split("?")[0]
-            vidid = result["id"]
-            duration_sec = int(time_to_seconds(duration_min)) if duration_min else 0
-        return title, duration_min, duration_sec, thumbnail, vidid
- 
+            original = self.base + original
+        direct_id = _youtube_video_id(original)
+        if direct_id:
+            info = await _yt_direct_info(f"https://www.youtube.com/watch?v={direct_id}")
+            if not info:
+                info = await _search_video_metadata(direct_id)
+            title = (info or {}).get("title") or await _oembed_title(direct_id) or "YouTube Track"
+            seconds = int((info or {}).get("duration") or 0)
+            duration_min = f"{seconds // 60}:{seconds % 60:02d}" if seconds else "00:00"
+            thumbnail = (info or {}).get("thumbnail") or f"https://i.ytimg.com/vi/{direct_id}/hqdefault.jpg"
+            return title, duration_min, seconds, thumbnail, direct_id
+
+        query = original.split("&", 1)[0].strip()
+        try:
+            results = VideosSearch(query, limit=1)
+            result_list = (await asyncio.wait_for(results.next(), timeout=8)).get("result") or []
+            if result_list:
+                result = result_list[0]
+                duration_min = result.get("duration") or ""
+                duration_sec = int(time_to_seconds(duration_min)) if duration_min else 0
+                thumbnail = ((result.get("thumbnails") or [{}])[0].get("url") or "").split("?")[0]
+                return result.get("title", query), duration_min, duration_sec, thumbnail, result.get("id")
+        except Exception:
+            pass
+
+        # Fallback search avoids making a failed VideosSearch call fatal.
+        try:
+            opts = {"quiet": True, "no_warnings": True, "skip_download": True,
+                    "extract_flat": True, "default_search": "ytsearch1"}
+            loop = asyncio.get_running_loop()
+            data = await asyncio.wait_for(
+                loop.run_in_executor(None, lambda: yt_dlp.YoutubeDL(opts).extract_info(f"ytsearch1:{query}", download=False)),
+                timeout=15,
+            )
+            entries = (data or {}).get("entries") or []
+            if entries:
+                result = entries[0]
+                vidid = result.get("id")
+                if vidid:
+                    title = result.get("title") or query
+                    seconds = int(result.get("duration") or 0)
+                    duration_min = f"{seconds // 60}:{seconds % 60:02d}" if seconds else "00:00"
+                    thumbnail = result.get("thumbnail") or f"https://i.ytimg.com/vi/{vidid}/hqdefault.jpg"
+                    return title, duration_min, seconds, thumbnail, vidid
+        except Exception:
+            pass
+        raise ValueError("No YouTube search result found for query")
+
     async def title(self, link: str, videoid: Union[bool, str] = None):
         if videoid:
             link = self.base + link
